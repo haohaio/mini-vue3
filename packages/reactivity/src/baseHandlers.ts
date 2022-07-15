@@ -25,7 +25,13 @@ import {
   reactive,
   ReactiveFlags
 } from './reactive'
+import {
+  activeEffect,
+  track,
+  trigger,
+} from './effect'
 import { isObject } from "@vue/shared";
+import { TrackOpTypes } from './operations';
 
 const get = createGetter()
 const set = createSetter()
@@ -37,6 +43,8 @@ function createGetter() {
     }
 
     const res = Reflect.get(target, key, receiver)
+
+    track(target, TrackOpTypes.GET, key)
 
     if (isObject(res)) {
       return reactive(res)
