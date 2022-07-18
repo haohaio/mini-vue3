@@ -28,12 +28,13 @@ export class ReactiveEffect<T = any> {
       this.parent = activeEffect
       activeEffect = this
 
+      // 考虑到分支切换（v-if），执行 fn 前需要将之前收集到的依赖清空，然后重新收集依赖
+      cleanupEffect(this)
+
       return this.fn()
     } finally {
       activeEffect = this.parent
       this.parent = undefined
-
-      this.stop()
     }
   }
 
@@ -42,6 +43,15 @@ export class ReactiveEffect<T = any> {
   }
 }
 
+function cleanupEffect(effect: ReactiveEffect) {
+  const { deps } = effect
+  if (deps.length) {
+    for (let i = 0, len = deps.length; i < len; i++) {
+      deps[i].delete(effect)
+    }
+    deps.length = 0
+  }
+}
 
 export function effect<T = any>(fn: () => T) {
   const _effect = new ReactiveEffect(fn)
@@ -82,7 +92,7 @@ export function trigger(target: object, type: TriggerOpTypes, key?: unknown, new
   const depsMap = targetMap.get(target)
   if (!depsMap) return
 
-
+  // 遍历执行 effect.run 时，会先清空 deps，然后在添加 dep，故需要维护一个新数组，不然会死循环
   let deps: (Dep | undefined)[] = []
 
   // void 0 表示 undefined，因为 undefined 有被修改的可能性，但是 void 0 返回值一定是 undefined，并且 void 0 比 undefined 字符所占空间少。
