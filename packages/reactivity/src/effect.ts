@@ -1,8 +1,13 @@
+import { createDep, Dep } from './dep'
 import { TrackOpTypes } from './operations'
+
+type KeyToDepMap = Map<any, Dep>
+const targetMap = new WeakMap<any, KeyToDepMap>()
 
 export let activeEffect: ReactiveEffect | undefined
 export class ReactiveEffect<T = any> {
   active = true // effect 默认是激活状态
+  deps: Dep[] = []
   parent: ReactiveEffect | undefined = undefined
 
   // public: 相当于 this.fn = fn
@@ -45,7 +50,28 @@ export function effect<T = any>(fn: () => T) {
 
 // 收集依赖
 export function track(target: object, type: TrackOpTypes, key: string | symbol) {
+  if (activeEffect) {
+    let depsMap = targetMap.get(target)
+    if (!depsMap) {
+      targetMap.set(target, (depsMap = new Map()))
+    }
 
+    let dep = depsMap.get(key)
+    if (!dep) {
+      depsMap.set(key, (dep = createDep()))
+    }
+
+    trackEffects(dep)
+  }
+}
+
+function trackEffects(dep: Dep) {
+  let shouldTrack = !dep.has(activeEffect!)
+
+  if (shouldTrack) {
+    dep.add(activeEffect!)
+    activeEffect!.deps.push(dep)
+  }
 }
 
 // 触发依赖
