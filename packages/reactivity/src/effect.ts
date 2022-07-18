@@ -82,6 +82,7 @@ export function trigger(target: object, type: TriggerOpTypes, key?: unknown, new
   const depsMap = targetMap.get(target)
   if (!depsMap) return
 
+
   let deps: (Dep | undefined)[] = []
 
   // void 0 表示 undefined，因为 undefined 有被修改的可能性，但是 void 0 返回值一定是 undefined，并且 void 0 比 undefined 字符所占空间少。
@@ -113,5 +114,8 @@ function triggerEffects(dep: Dep | ReactiveEffect[]) {
 }
 
 function triggerEffect(effect: ReactiveEffect) {
-  effect.run()
+  // 防止在 effect 中修改 state，无线递归
+  if (effect !== activeEffect) {
+    effect.run()
+  }
 }
