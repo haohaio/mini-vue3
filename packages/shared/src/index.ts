@@ -16,6 +16,8 @@ export const isMap = (val: unknown): val is Map<any, any> =>
   toTypeString(val) === '[object Map]'
 export const isSet = (val: unknown): val is Set<any> =>
   toTypeString(val) === '[object Set]'
+export const isPlainObject = (val: unknown): val is object =>
+  toTypeString(val) === '[object Object]'
 
 const hasOwnProperty = Object.prototype.hasOwnProperty
 

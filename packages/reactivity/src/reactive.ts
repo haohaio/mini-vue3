@@ -37,3 +37,7 @@ function createReactiveObject(target: Target, baseHandlers: ProxyHandler<any>, p
   proxyMap.set(target, proxy)
   return proxy
 }
+
+export function isReactive(value: unknown): boolean {
+  return !!(value && (value as Target)[ReactiveFlags.IS_REACTIVE])
+}

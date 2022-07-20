@@ -1,5 +1,9 @@
-export { reactive } from './reactive'
+export { reactive, isReactive } from './reactive'
 
-export { effect } from './effect'
+export { effect, ReactiveEffect, activeEffect } from './effect'
 
-export { computed } from './computed'
+export { computed, ComputedRef } from './computed'
+
+export { watch } from './watch'
+
+export { Ref, isRef } from './ref'

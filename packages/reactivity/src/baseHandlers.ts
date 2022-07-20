@@ -26,7 +26,6 @@ import {
   ReactiveFlags
 } from './reactive'
 import {
-  activeEffect,
   track,
   trigger,
 } from './effect'

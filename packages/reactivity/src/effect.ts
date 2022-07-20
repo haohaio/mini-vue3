@@ -33,7 +33,6 @@ export class ReactiveEffect<T = any> {
 
       // 考虑到分支切换（v-if），执行 fn 前需要将之前收集到的依赖清空，然后重新收集依赖
       cleanupEffect(this)
-
       return this.fn()
     } finally {
       activeEffect = this.parent
@@ -106,7 +105,6 @@ export function track(target: object, type: TrackOpTypes, key: string | symbol) 
     if (!dep) {
       depsMap.set(key, (dep = createDep()))
     }
-
     trackEffects(dep)
   }
 }
