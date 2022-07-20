@@ -7,6 +7,14 @@ export interface WatchOptionsBase {
   flush?: 'pre' | 'post' | 'sync'
 }
 
+export type WatchCallback<V = any, OV = any> = (
+  value: V,
+  oldValue: OV,
+  onCleanup: OnCleanup // 并发处理
+) => any
+
+type OnCleanup = (cleanupFn: () => void) => void
+
 export interface WatchOptions<Immediate = boolean> extends WatchOptionsBase {
   immediate?: Immediate
   deep?: boolean
@@ -18,7 +26,7 @@ export function watch(source: any, cb: any, options: WatchOptions) {
 
 // 当 source 为一个 proxy 时，由于 source 为引用数据类型，此时 newValue 和 oldValue 是一样的
 // 当 source 为一个函数时，可以用来监控普通值，此时 newValue 和 oldValue 会有区别
-function doWatch(source: any, cb: any, { immediate, deep, flush }: WatchOptions = {}) {
+function doWatch(source: any, cb: WatchCallback | null, { immediate, deep, flush }: WatchOptions = {}) {
   let getter: () => any
 
   if (isRef(source)) {
@@ -37,11 +45,25 @@ function doWatch(source: any, cb: any, { immediate, deep, flush }: WatchOptions 
     getter = () => traverse(baseGetter())
   }
 
+  let cleanup: () => void
+  let onCleanup: OnCleanup = (fn: () => void) => {
+    cleanup = fn
+  }
+
   let oldValue = {}
   const job = () => {
-    const newValue = effect.run()
-    cb(newValue, oldValue)
-    oldValue = newValue
+    if (cb) {
+      // 执行调度器函数时，先指向上一个调度器函数的的 cleanup 函数
+      if (cleanup) {
+        cleanup()
+      }
+
+      const newValue = effect.run()
+      cb(newValue, oldValue, onCleanup)
+      oldValue = newValue
+    } else {
+      effect.run()
+    }
   }
 
   const effect = new ReactiveEffect(getter, job)
