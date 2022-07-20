@@ -1,18 +1,21 @@
 import { isObject } from '@vue/shared'
 import { mutableHandlers } from "./baseHandlers";
+import { Ref } from './ref';
 
 export const enum ReactiveFlags {
   IS_REACTIVE = '__v_isReactive',
   IS_READONLY = '__v_isReadonly',
+  RAW = '__v_raw'
 }
 
 export interface Target {
-  [ReactiveFlags.IS_REACTIVE]?: boolean
+  [ReactiveFlags.IS_REACTIVE]?: boolean,
+  [ReactiveFlags.RAW]?: any
 }
 
 export const reactiveMap = new WeakMap<Target, any>()
 
-export function reactive(target: object) {
+export function reactive(target: any) {
   return createReactiveObject(target, mutableHandlers, reactiveMap)
 }
 
@@ -41,3 +44,11 @@ function createReactiveObject(target: Target, baseHandlers: ProxyHandler<any>, p
 export function isReactive(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_REACTIVE])
 }
+
+export function toRaw<T>(observed: T): T {
+  const raw = observed && (observed as Target)[ReactiveFlags.RAW]
+  return raw ? toRaw(raw) : observed
+}
+
+export const toReactive = <T extends unknown>(value: T): T =>
+  isObject(value) ? reactive(value) : value
