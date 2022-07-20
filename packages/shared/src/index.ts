@@ -1,3 +1,5 @@
+export const extend = Object.assign
+
 export const objectToString = Object.prototype.toString
 export const toTypeString = (value: unknown): string =>
   objectToString.call(value)
@@ -7,6 +9,9 @@ export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
 export const isObject = (value: unknown) => {
   return value !== null && typeof value === 'object'
 }
+export const isFunction = (val: unknown): val is Function =>
+  typeof val === 'function'
+
 export const isMap = (val: unknown): val is Map<any, any> =>
   toTypeString(val) === '[object Map]'
 export const isSet = (val: unknown): val is Set<any> =>
@@ -27,3 +32,5 @@ export const isIntegerKey = (key: unknown) =>
 // Object.is() 与 === 区别： 会区分 +0 和 -0（但是 BigInt 类型的 0n 和 -0n 会判断为 true），可判断 NaN 是否相等
 export const hasChanged = (value: any, oldValue: any): boolean =>
   !Object.is(value, oldValue)
+
+export const NOOP = () => { }

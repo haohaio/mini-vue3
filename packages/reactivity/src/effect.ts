@@ -1,18 +1,21 @@
 import { createDep, Dep } from './dep'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
-import { isArray } from "@vue/shared";
+import { extend, isArray } from "@vue/shared";
 
 type KeyToDepMap = Map<any, Dep>
 const targetMap = new WeakMap<any, KeyToDepMap>()
+
+export type EffectScheduler = (...args: any[]) => any
 
 export let activeEffect: ReactiveEffect | undefined
 export class ReactiveEffect<T = any> {
   active = true // effect 默认是激活状态
   deps: Dep[] = []
   parent: ReactiveEffect | undefined = undefined
+  private deferStop?: boolean
 
   // public: 相当于 this.fn = fn
-  constructor(public fn: () => T) {
+  constructor(public fn: () => T, public scheduler: EffectScheduler | null = null,) {
 
   }
 
@@ -35,11 +38,20 @@ export class ReactiveEffect<T = any> {
     } finally {
       activeEffect = this.parent
       this.parent = undefined
+
+      if (this.deferStop) {
+        this.stop()
+      }
     }
   }
 
   stop() {
-    this.active = false
+    if (activeEffect === this) {
+      this.deferStop = true
+    } else if (this.active) {
+      cleanupEffect(this)
+      this.active = false
+    }
   }
 }
 
@@ -53,11 +65,32 @@ function cleanupEffect(effect: ReactiveEffect) {
   }
 }
 
-export function effect<T = any>(fn: () => T) {
+export interface ReactiveEffectOptions {
+  lazy?: boolean
+  scheduler?: EffectScheduler
+  allowRecurse?: boolean
+  onStop?: () => void
+}
+
+export interface ReactiveEffectRunner<T = any> {
+  (): T
+  effect: ReactiveEffect
+}
+
+export function effect<T = any>(fn: () => T, options?: ReactiveEffectOptions) {
   const _effect = new ReactiveEffect(fn)
+  if (options) {
+    extend(_effect, options)
+  }
 
   // 默认先执行一次
-  _effect.run()
+  if (!options || !options.lazy) {
+    _effect.run()
+  }
+
+  const runner = _effect.run.bind(_effect) as ReactiveEffectRunner
+  runner.effect = _effect
+  return runner
 }
 
 // 收集依赖
@@ -78,7 +111,7 @@ export function track(target: object, type: TrackOpTypes, key: string | symbol) 
   }
 }
 
-function trackEffects(dep: Dep) {
+export function trackEffects(dep: Dep) {
   let shouldTrack = !dep.has(activeEffect!)
 
   if (shouldTrack) {
@@ -115,7 +148,7 @@ export function trigger(target: object, type: TriggerOpTypes, key?: unknown, new
   }
 }
 
-function triggerEffects(dep: Dep | ReactiveEffect[]) {
+export function triggerEffects(dep: Dep | ReactiveEffect[]) {
   const effects = isArray(dep) ? dep : [...dep]
 
   for (const effect of effects) {
@@ -124,8 +157,13 @@ function triggerEffects(dep: Dep | ReactiveEffect[]) {
 }
 
 function triggerEffect(effect: ReactiveEffect) {
-  // 防止在 effect 中修改 state，无线递归
+  // 防止在 effect 中修改 state，无限递归
   if (effect !== activeEffect) {
-    effect.run()
+
+    if (effect.scheduler) {
+      effect.scheduler()
+    } else {
+      effect.run()
+    }
   }
 }
