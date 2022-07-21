@@ -4,6 +4,7 @@ import { hasChanged, isArray } from '@vue/shared'
 import { toRaw, toReactive, isReactive } from './reactive'
 
 declare const RefSymbol: unique symbol
+export declare const RawSymbol: unique symbol
 
 export interface Ref<T = any> {
   value: T
