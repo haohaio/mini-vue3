@@ -1,3 +1,5 @@
+export { makeMap } from './makeMap'
+
 export const extend = Object.assign
 
 export const objectToString = Object.prototype.toString
