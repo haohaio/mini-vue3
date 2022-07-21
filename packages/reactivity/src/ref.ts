@@ -1,7 +1,7 @@
 import { activeEffect, trackEffects, triggerEffects } from './effect';
 import { Dep, createDep } from './dep';
 import { hasChanged, isArray } from '@vue/shared'
-import { toRaw, toReactive } from './reactive'
+import { toRaw, toReactive, isReactive } from './reactive'
 
 declare const RefSymbol: unique symbol
 
@@ -102,6 +102,31 @@ export function toRef<T extends object, K extends keyof T>(object: T, key: K, de
     : (new ObjectRefImpl(object, key, defaultValue) as any)
 }
 
+export function unref<T>(ref: T | Ref<T>): T {
+  return isRef(ref) ? (ref.value as any) : ref
+}
+
+const shallowUnwrapHandlers: ProxyHandler<any> = {
+  get: (target, key, receiver) => unref(Reflect.get(target, key, receiver)),
+  set: (target, key, value, receiver) => {
+    const oldValue = target[key]
+    if (isRef(oldValue) && !isRef(value)) {
+      oldValue.value = value
+      return true
+    } else {
+      return Reflect.set(target, key, value, receiver)
+    }
+  }
+}
+
+export function proxyRefs<T extends object>(
+  objectWithRefs: T
+): ShallowUnwrapRef<T> {
+  return isReactive(objectWithRefs)
+    ? objectWithRefs
+    : new Proxy(objectWithRefs, shallowUnwrapHandlers)
+}
+
 export function trackRefValue(ref: RefBase<any>) {
   if (activeEffect) {
     trackEffects(ref.dep || (ref.dep = createDep()))
@@ -117,4 +142,15 @@ export function triggerRefValue(ref: RefBase<any>, newVal?: any) {
 export function isRef<T>(r: Ref<T> | unknown): r is Ref<T>
 export function isRef(r: any): r is Ref {
   return !!(r && r.__v_isRef === true)
+}
+
+export type ShallowUnwrapRef<T> = {
+  [K in keyof T]: T[K] extends Ref<infer V>
+  ? V
+  : // if `V` is `unknown` that means it does not extend `Ref` and is undefined
+  T[K] extends Ref<infer V> | undefined
+  ? unknown extends V
+  ? undefined
+  : V | undefined
+  : T[K]
 }
