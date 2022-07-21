@@ -1,11 +1,15 @@
 import { createDep, Dep } from './dep'
 import { TrackOpTypes, TriggerOpTypes } from './operations'
-import { extend, isArray } from "@vue/shared";
+import { extend, isArray, isMap, isIntegerKey } from "@vue/shared";
 
 type KeyToDepMap = Map<any, Dep>
 const targetMap = new WeakMap<any, KeyToDepMap>()
 
+
 export type EffectScheduler = (...args: any[]) => any
+
+export const ITERATE_KEY = Symbol('iterate')
+export const MAP_KEY_ITERATE_KEY = Symbol('Map key iterate')
 
 export let activeEffect: ReactiveEffect | undefined
 export class ReactiveEffect<T = any> {
@@ -25,17 +29,21 @@ export class ReactiveEffect<T = any> {
       return this.fn()
     }
 
+    let lastShouldTrack = shouldTrack
+
     // 收集依赖
     try {
       // 处理 effect 嵌套问题
       this.parent = activeEffect
       activeEffect = this
+      shouldTrack = true
 
       // 考虑到分支切换（v-if），执行 fn 前需要将之前收集到的依赖清空，然后重新收集依赖
       cleanupEffect(this)
       return this.fn()
     } finally {
       activeEffect = this.parent
+      shouldTrack = lastShouldTrack
       this.parent = undefined
 
       if (this.deferStop) {
@@ -92,9 +100,27 @@ export function effect<T = any>(fn: () => T, options?: ReactiveEffectOptions) {
   return runner
 }
 
+export let shouldTrack = true
+const trackStack: boolean[] = []
+
+export function pauseTracking() {
+  trackStack.push(shouldTrack)
+  shouldTrack = false
+}
+
+export function enableTracking() {
+  trackStack.push(shouldTrack)
+  shouldTrack = true
+}
+
+export function resetTracking() {
+  const last = trackStack.pop()
+  shouldTrack = last === undefined ? true : last
+}
+
 // 收集依赖
 export function track(target: object, type: TrackOpTypes, key: string | symbol) {
-  if (activeEffect) {
+  if (shouldTrack && activeEffect) {
     let depsMap = targetMap.get(target)
 
     if (!depsMap) {
@@ -126,10 +152,49 @@ export function trigger(target: object, type: TriggerOpTypes, key?: unknown, new
   // 遍历执行 effect.run 时，会先清空 deps，然后在添加 dep，故需要维护一个新数组，不然会死循环
   let deps: (Dep | undefined)[] = []
 
-  // void 0 表示 undefined，因为 undefined 有被修改的可能性，但是 void 0 返回值一定是 undefined，并且 void 0 比 undefined 字符所占空间少。
-  if (key !== void 0) {
-    deps.push(depsMap.get(key))
+  if (key === 'length' && isArray(target)) {
+    depsMap.forEach((dep, key) => {
+      if (key === 'length' || key >= (newValue as number)) {
+        deps.push(dep)
+      }
+    })
+  } else {
+    if (key !== void 0) {
+      deps.push(depsMap.get(key))
+    }
+
+    switch (type) {
+      case TriggerOpTypes.ADD:
+        if (!isArray(target)) {
+          // 会触发 proxy ownKeys
+          deps.push(depsMap.get(ITERATE_KEY))
+          // Todo: 会在 collectionHandlers 里进行处理
+          if (isMap(target)) {
+            deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
+          }
+        } else if (isIntegerKey(key)) {
+          // 触发数组 length 属性更新
+          deps.push(depsMap.get('length'))
+        }
+        break
+      case TriggerOpTypes.DELETE:
+        if (!isArray(target)) {
+          deps.push(depsMap.get(ITERATE_KEY))
+          if (isMap(target)) {
+            deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
+          }
+        }
+        break
+      case TriggerOpTypes.SET:
+        if (isMap(target)) {
+          deps.push(depsMap.get(ITERATE_KEY))
+        }
+        break
+    }
   }
+
+  // void 0 表示 undefined，因为 undefined 有被修改的可能性，但是 void 0 返回值一定是 undefined，并且 void 0 比 undefined 字符所占空间少。
+
   if (deps.length === 1) {
     if (deps[0]) {
       triggerEffects(deps[0])

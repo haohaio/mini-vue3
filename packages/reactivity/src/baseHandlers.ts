@@ -33,6 +33,9 @@ import {
 import {
   track,
   trigger,
+  ITERATE_KEY,
+  pauseTracking,
+  resetTracking
 } from './effect'
 import { isObject, isArray, isIntegerKey, hasOwn, hasChanged, extend, isSymbol, makeMap } from "@vue/shared";
 import { TrackOpTypes, TriggerOpTypes } from './operations';
@@ -56,6 +59,43 @@ const shallowGet = createGetter(false, true)
 const readonlyGet = createGetter(true, false)
 const shallowReadonlyGet = createGetter(true, true)
 
+const arrayInstrumentations = /*#__PURE__*/ createArrayInstrumentations()
+
+function createArrayInstrumentations() {
+  const instrumentations: Record<string, Function> = {};
+
+  // 设计到遍历的数组方法
+  (['includes', 'indexOf', 'lastIndexOf'] as const).forEach(key => {
+    instrumentations[key] = function (this: unknown[], ...args: unknown[]) {
+      const arr = toRaw(this) as any
+      for (let i = 0, l = this.length; i < l; i++) {
+        // 对组数下标进行依赖收集
+        track(arr, TrackOpTypes.GET, i + '')
+      }
+      // 如果查找数组对象时查找不到，将查找对象转为原始值再查找一次
+      const res = arr[key](...args)
+      if (res === -1 || res === false) {
+        // if that didn't work, run it again using raw values.
+        return arr[key](...args.map(toRaw))
+      } else {
+        return res
+      }
+    }
+  });
+  // 涉及到修改数组长度的方法，返回的是数组长度
+  (['push', 'pop', 'shift', 'unshift', 'splice'] as const).forEach(key => {
+    instrumentations[key] = function (this: unknown[], ...args: unknown[]) {
+      // 暂停依赖收集
+      pauseTracking()
+      const res = (toRaw(this) as any)[key].apply(this, args)
+      // 通过栈恢复之前的依赖收集状态
+      resetTracking()
+      return res
+    }
+  })
+  return instrumentations
+}
+
 function createGetter(isReadonly = false, shallow = false) {
   return function get(target: object, key: string | symbol, receiver: object) {
     if (key === ReactiveFlags.IS_REACTIVE) {
@@ -69,6 +109,13 @@ function createGetter(isReadonly = false, shallow = false) {
       receiver === reactiveMap.get(target)
     ) {
       return target
+    }
+
+    const targetIsArray = isArray(target)
+
+    // 还需对数组修改自身的5个方法（reverse 和 sort 无需处理）进行处理
+    if (!isReadonly && targetIsArray && hasOwn(arrayInstrumentations, key)) {
+      return Reflect.get(arrayInstrumentations, key, receiver)
     }
 
     const res = Reflect.get(target, key, receiver)
@@ -131,9 +178,38 @@ function createSetter(shallow = false) {
   }
 }
 
+// delete obj[name] / Reflect.deleteProperty(obj, name)
+function deleteProperty(target: object, key: string | symbol): boolean {
+  const hadKey = hasOwn(target, key)
+  const oldValue = (target as any)[key]
+  const result = Reflect.deleteProperty(target, key)
+  if (result && hadKey) {
+    trigger(target, TriggerOpTypes.DELETE, key, undefined, oldValue)
+  }
+  return result
+}
+
+// name in obj / Reflect.has(obj, name)
+function has(target: object, key: string | symbol): boolean {
+  const result = Reflect.has(target, key)
+  if (!isSymbol(key) || !builtInSymbols.has(key)) {
+    track(target, TrackOpTypes.HAS, key)
+  }
+  return result
+}
+
+// Reflect.ownKeys / Object.getOwnPropertyNames 和 Object.getOwnPropertySymbols 之和
+function ownKeys(target: object): (string | symbol)[] {
+  track(target, TrackOpTypes.ITERATE, isArray(target) ? 'length' : ITERATE_KEY)
+  return Reflect.ownKeys(target)
+}
+
 export const mutableHandlers: ProxyHandler<object> = {
   get,
-  set
+  set,
+  deleteProperty,
+  has,
+  ownKeys
 }
 
 export const shallowReactiveHandlers = /*#__PURE__*/ extend(
